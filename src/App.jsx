@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
+import html2canvas from "html2canvas";
 
 export default function FitnessAIPlanner() {
   const [form, setForm] = useState({
@@ -14,6 +15,7 @@ export default function FitnessAIPlanner() {
     equipmentLevel: "bw", // bw | db | gym
   });
   const [plan, setPlan] = useState(null);
+  const planRef = useRef(null); // 圖片輸出區塊
 
   const activityFactor = (key) =>
     ({
@@ -52,14 +54,13 @@ export default function FitnessAIPlanner() {
     setForm((f) => ({ ...f, [key]: val }));
   }
 
-  // 器材等級對應：優先回傳符合等級的動作名稱
+  // ---- 器材選擇對應的動作名稱 ----
   function pickMove({ gym, db, bw }) {
     if (form.equipmentLevel === "gym") return gym ?? db ?? bw;
     if (form.equipmentLevel === "db") return db ?? bw;
-    return bw; // bw
+    return bw; // 徒手
   }
 
-  // 一些常用動作的器材替代
   const M = {
     squat: pickMove({
       gym: "槓鈴深蹲",
@@ -88,7 +89,7 @@ export default function FitnessAIPlanner() {
     }),
     pulldown: pickMove({
       gym: "高位下拉 / 引體向上",
-      db: "彈力帶下拉（*若可*）/ 啞鈴上拉",
+      db: "彈力帶下拉（可選）/ 啞鈴上拉",
       bw: "引體向上（彈力帶輔助 / 負向）",
     }),
     shoulderLat: pickMove({
@@ -120,7 +121,6 @@ export default function FitnessAIPlanner() {
     }),
   };
 
-  // 依器材等級生成訓練分化
   function buildSplit(days) {
     const FullA = [
       { name: M.squat, sets: "3–4 × 6–10" },
@@ -235,7 +235,7 @@ export default function FitnessAIPlanner() {
   function goalTips(goal) {
     if (goal === "fat_loss")
       return [
-        "每日熱量赤字約 15%，蛋白質先到位（1.8–2.0 g/kg）。",
+        "每日熱量赤字約 15%，蛋白質 1.8–2.0 g/kg。",
         "每週 2–4 次 Zone2；保持阻力訓練強度避免流失肌肉。",
         "腰圍連續兩週不降 → 熱量再降 100–150 kcal。",
       ];
@@ -269,6 +269,25 @@ export default function FitnessAIPlanner() {
       generatedAt: new Date().toISOString(),
     });
   }
+
+  async function savePlanAsImage() {
+    if (!planRef.current) return;
+    const el = planRef.current;
+    const canvas = await html2canvas(el, {
+      backgroundColor: "#ffffff",
+      scale: window.devicePixelRatio > 1 ? 2 : 1.5,
+      useCORS: true,
+    });
+    const dataUrl = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    const who = (form.name || "user").replace(/\s+/g, "");
+    const today = new Date().toISOString().slice(0, 10);
+    a.href = dataUrl;
+    a.download = `fitness_plan_${who}_${today}.png`;
+    a.click();
+  }
+
+  const equipmentLabel = { bw: "徒手", db: "徒手＋啞鈴", gym: "健身房設備" }[form.equipmentLevel];
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 p-6">
@@ -319,7 +338,7 @@ export default function FitnessAIPlanner() {
           onChange={(v) => handleChange("equipmentLevel", v)}
           options={[
             { value: "bw", label: "徒手" },
-            { value: "db", label: "徒手＋簡易器材（啞鈴）" },
+            { value: "db", label: "徒手＋啞鈴（簡易）" },
             { value: "gym", label: "健身房設備" },
           ]}
         />
@@ -336,43 +355,59 @@ export default function FitnessAIPlanner() {
         </label>
       </div>
 
-      {/* 計算結果 */}
+      {/* 計算結果 + 產生按鈕 */}
       <div className="mt-6 bg-white shadow rounded-xl p-4 max-w-xl">
         <h2 className="font-semibold mb-2">📊 計算結果</h2>
         <p>BMI：{calc.bmi ? calc.bmi.toFixed(1) : "—"}</p>
         <p>BMR：{Math.round(calc.bmr)} kcal</p>
         <p>TDEE：{Math.round(calc.tdee)} kcal</p>
         <p>建議每日熱量：{Math.round(calc.kcal)} kcal</p>
-        <p>
-          蛋白質：{calc.proteinG} g，脂肪：{calc.fatG} g，碳水：{calc.carbsG} g
-        </p>
-        <button
-          onClick={buildPlan}
-          className="mt-3 px-4 py-2 rounded-xl bg-black text-white hover:opacity-90"
-        >
-          產生專屬方案
-        </button>
+        <p>蛋白質：{calc.proteinG} g，脂肪：{calc.fatG} g，碳水：{calc.carbsG} g</p>
+
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={buildPlan}
+            className="px-4 py-2 rounded-xl bg-black text-white hover:opacity-90"
+          >
+            產生專屬方案
+          </button>
+          {plan && (
+            <button
+              onClick={savePlanAsImage}
+              className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-100"
+            >
+              下載圖片（PNG）
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* 專屬方案輸出 */}
+      {/* 專屬方案輸出（這一塊會被轉成圖片） */}
       {plan && (
-        <div className="mt-6 grid md:grid-cols-2 gap-6 max-w-6xl">
-          <div className="bg-white shadow rounded-xl p-4">
+        <div
+          ref={planRef}
+          className="mt-6 grid md:grid-cols-2 gap-6 max-w-6xl bg-white p-4 rounded-2xl shadow"
+        >
+          <div className="text-sm text-gray-500 mb-2 md:col-span-2">
+            建議產出：{new Date(plan.generatedAt).toLocaleString()} ｜ 器材：{equipmentLabel}
+          </div>
+
+          <div className="bg-white border rounded-xl p-4">
             <h3 className="font-semibold mb-2">🍽️ 營養建議</h3>
             <p>每日熱量：<b>{plan.nutrition.calories}</b> kcal</p>
-            <p>蛋白質：<b>{plan.nutrition.protein_g}</b> g、脂肪：<b>{plan.nutrition.fat_g}</b> g、碳水：<b>{plan.nutrition.carbs_g}</b> g</p>
+            <p>
+              蛋白質：<b>{plan.nutrition.protein_g}</b> g、脂肪：<b>{plan.nutrition.fat_g}</b> g、碳水：<b>{plan.nutrition.carbs_g}</b> g
+            </p>
             <h4 className="font-semibold mt-4 mb-1">💡 實用技巧</h4>
             <ul className="list-disc pl-5 text-sm space-y-1">
-              {plan.tips.map((t, i) => (<li key={i}>{t}</li>))}
+              {plan.tips.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
             </ul>
           </div>
 
-          <div className="bg-white shadow rounded-xl p-4">
-            <h3 className="font-semibold mb-2">🏃 每週訓練表（{form.daysPerWeek} 天｜{{
-              bw: "徒手",
-              db: "徒手+啞鈴",
-              gym: "健身房設備",
-            }[form.equipmentLevel]}）</h3>
+          <div className="bg-white border rounded-xl p-4">
+            <h3 className="font-semibold mb-2">🏃 每週訓練表（{form.daysPerWeek} 天｜{equipmentLabel}）</h3>
             <div className="space-y-3">
               {plan.training.map((d, i) => (
                 <div key={i} className="border rounded-xl p-3">
@@ -396,6 +431,10 @@ export default function FitnessAIPlanner() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="text-[10px] text-gray-400 md:col-span-2 text-right">
+            © Fitness AI — 本工具提供一般性建議，非醫療診斷
           </div>
         </div>
       )}
