@@ -3,19 +3,18 @@ import html2canvas from "html2canvas";
 
 export default function FitnessAIPlanner() {
   const [form, setForm] = useState({
-    name: "",
     sex: "male",
     age: 30,
-    heightCm: 170,
-    weightKg: 68,
-    bodyFat: 20,
-    activity: "moderate",
-    goal: "fat_loss", // fat_loss | muscle_gain | maintenance | recomp
+    heightCm: 170.0,
+    weightKg: 68.0,
+    bodyFat: 20.0,
+    activity: "moderate", // sedentary | light | moderate | active | veryActive
+    goal: "fat_loss",     // fat_loss | muscle_gain | recomp | maintenance
     daysPerWeek: 4,
     equipmentLevel: "bw", // bw | db | gym
   });
   const [plan, setPlan] = useState(null);
-  const planRef = useRef(null); // 圖片輸出區塊
+  const planRef = useRef(null);
 
   const activityFactor = (key) =>
     ({
@@ -39,9 +38,9 @@ export default function FitnessAIPlanner() {
     const tdee = bmr * activityFactor(form.activity);
 
     let kcal = tdee;
-    if (form.goal === "fat_loss") kcal = tdee * 0.85; // ~15% 赤字
+    if (form.goal === "fat_loss") kcal = tdee * 0.85;   // ~15% 赤字
     if (form.goal === "muscle_gain") kcal = tdee * 1.1; // ~10% 盈餘
-    if (form.goal === "recomp") kcal = tdee * 0.95; // 輕赤字
+    if (form.goal === "recomp") kcal = tdee * 0.95;     // 輕赤字
 
     const proteinG = Math.round((form.goal === "muscle_gain" ? 2.0 : 1.8) * w);
     const fatG = Math.round((kcal * 0.3) / 9);
@@ -54,11 +53,11 @@ export default function FitnessAIPlanner() {
     setForm((f) => ({ ...f, [key]: val }));
   }
 
-  // ---- 器材選擇對應的動作名稱 ----
+  // —— 器材映射 —— //
   function pickMove({ gym, db, bw }) {
     if (form.equipmentLevel === "gym") return gym ?? db ?? bw;
     if (form.equipmentLevel === "db") return db ?? bw;
-    return bw; // 徒手
+    return bw;
   }
 
   const M = {
@@ -89,7 +88,7 @@ export default function FitnessAIPlanner() {
     }),
     pulldown: pickMove({
       gym: "高位下拉 / 引體向上",
-      db: "彈力帶下拉（可選）/ 啞鈴上拉",
+      db: "彈力帶下拉 / 啞鈴上拉",
       bw: "引體向上（彈力帶輔助 / 負向）",
     }),
     shoulderLat: pickMove({
@@ -121,6 +120,7 @@ export default function FitnessAIPlanner() {
     }),
   };
 
+  // —— 訓練分化 —— //
   function buildSplit(days) {
     const FullA = [
       { name: M.squat, sets: "3–4 × 6–10" },
@@ -232,31 +232,65 @@ export default function FitnessAIPlanner() {
     ];
   }
 
-  function goalTips(goal) {
-    if (goal === "fat_loss")
-      return [
-        "每日熱量赤字約 15%，蛋白質 1.8–2.0 g/kg。",
-        "每週 2–4 次 Zone2；保持阻力訓練強度避免流失肌肉。",
-        "腰圍連續兩週不降 → 熱量再降 100–150 kcal。",
-      ];
-    if (goal === "muscle_gain")
-      return [
-        "熱量盈餘 ~10%；每肌群每週 10–20 組，RIR 1–3。",
-        "週期化增加總量：先加組數，再加重量。",
-        "睡 7–9 小時；每月體重 +0.5–1%。",
-      ];
-    if (goal === "recomp")
-      return [
-        "維持或小赤字；以力量/次數微進步為主。",
-        "訓練日碳水前置；休息日略降碳水。",
-        "以『腰圍下降 + 力量持平/上升』為判準。",
-      ];
-    return ["維持 TDEE；追蹤表現、睡眠與壓力。", "每週 150–300 分鐘中強度活動。", "固定蛋白質，維持阻力訓練。"];
+  // —— 實用建議（依 BMI / 活動量 / 體脂 / 器材 / 目標）—— //
+  function practicalTips() {
+    const tips = [];
+
+    // BMI（採亞洲常用範圍）
+    const bmi = calc.bmi;
+    if (bmi) {
+      if (bmi < 18.5)
+        tips.push("BMI 偏低：優先增肌與熱量盈餘（+10%），每肌群每週 10–20 組。");
+      else if (bmi < 24)
+        tips.push("BMI 正常：以表現進步為核心，維持 TDEE 附近與規律阻力訓練。");
+      else if (bmi < 27)
+        tips.push("BMI 過重：以 10–15% 熱量赤字搭配阻力訓練與每週 2–3 次有氧。");
+      else tips.push("BMI 肥胖：循序加強有氧與阻力訓練，先確保關節友善的動作選擇。");
+    }
+
+    // 活動量
+    const actMap = {
+      sedentary: "久坐：每日步數先到 6–8k，加入 2–4 次 Zone2 有氧（30–45 分）。",
+      light: "輕量：維持步數 8–10k，阻力訓練後加 10–15 分收操有氧。",
+      moderate: "中等：可加入 1 次間歇有氧，訓練量週期化（3 週遞增 1 週降）。",
+      active: "高：注意恢復與睡眠，安排 1 週 deload（降量）避免過度訓練。",
+      veryActive: "非常高：碳水前置到訓練前後，重視關節保養與活動度。",
+    };
+    tips.push(actMap[form.activity]);
+
+    // 體脂（不分性別的簡化版門檻）
+    const bf = Number(form.bodyFat) || 0;
+    if (bf >= 30) tips.push("體脂較高：優先赤字飲食、固定蛋白質；力量維持不追求過量訓練量。");
+    else if (bf >= 20) tips.push("體脂中等：可採輕赤字或維持熱量，專注於力量與動作品質。");
+    else tips.push("體脂較低：留意內分泌與恢復，避免長期過低體脂；增肌期採小幅盈餘。");
+
+    // 器材
+    const eq = { bw: "徒手", db: "徒手＋啞鈴", gym: "健身房設備" }[form.equipmentLevel];
+    if (form.equipmentLevel === "bw")
+      tips.push("器材：徒手 → 使用節奏控制與慢離心、增加動作難度（如抬高伏地）。");
+    if (form.equipmentLevel === "db")
+      tips.push("器材：徒手＋啞鈴 → 一對可調啞鈴＋穩固椅凳即可完成全身訓練。");
+    if (form.equipmentLevel === "gym")
+      tips.push("器材：健身房 → 自由重量＋器械混合，複合動作放前、孤立動作收尾。");
+
+    // 目標
+    const goalTips =
+      form.goal === "fat_loss"
+        ? "目標：減脂 → 赤字約 15%，腰圍連續兩週不降再減 100–150 kcal。"
+        : form.goal === "muscle_gain"
+        ? "目標：增肌 → 盈餘約 10%，每月體重＋0.5–1%，漸進超負荷。"
+        : form.goal === "recomp"
+        ? "目標：重組 → 維持或小赤字；以力量微進步＋腰圍下降為判準。"
+        : "目標：維持 → 以表現與健康指標為主，固定蛋白質與規律運動。";
+    tips.push(goalTips);
+
+    tips.push(`每週訓練天數：${form.daysPerWeek} 天；器材：${eq}。`);
+    return tips.filter(Boolean);
   }
 
   function buildPlan() {
     const training = buildSplit(Number(form.daysPerWeek));
-    const tips = goalTips(form.goal);
+    const tips = practicalTips();
     setPlan({
       nutrition: {
         calories: Math.round(calc.kcal),
@@ -275,27 +309,23 @@ export default function FitnessAIPlanner() {
     const el = planRef.current;
     const canvas = await html2canvas(el, {
       backgroundColor: "#ffffff",
-      scale: window.devicePixelRatio > 1 ? 2 : 1.5,
+      scale: typeof window !== "undefined" && window.devicePixelRatio > 1 ? 2 : 1.5,
       useCORS: true,
     });
     const dataUrl = canvas.toDataURL("image/png");
     const a = document.createElement("a");
-    const who = (form.name || "user").replace(/\s+/g, "");
     const today = new Date().toISOString().slice(0, 10);
     a.href = dataUrl;
-    a.download = `fitness_plan_${who}_${today}.png`;
+    a.download = `fitness_plan_${today}.png`;
     a.click();
   }
 
-  const equipmentLabel = { bw: "徒手", db: "徒手＋啞鈴", gym: "健身房設備" }[form.equipmentLevel];
-
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 p-6">
-      <h1 className="text-2xl font-bold mb-4">🏋️ 健身規劃 AI (MVP)</h1>
+      <h1 className="text-2xl font-bold mb-4">💥 健身超猛專案 by 朱</h1>
 
-      {/* 表單 */}
+      {/* 表單（無暱稱） */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-5xl">
-        <Input label="暱稱" value={form.name} onChange={(v) => handleChange("name", v)} />
         <Select
           label="性別"
           value={form.sex}
@@ -305,10 +335,10 @@ export default function FitnessAIPlanner() {
             { value: "female", label: "女性" },
           ]}
         />
-        <Input label="年齡" type="number" value={form.age} onChange={(v) => handleChange("age", Number(v))} />
-        <Input label="身高 (cm)" type="number" value={form.heightCm} onChange={(v) => handleChange("heightCm", Number(v))} />
-        <Input label="體重 (kg)" type="number" value={form.weightKg} onChange={(v) => handleChange("weightKg", Number(v))} />
-        <Input label="體脂 (%)" type="number" value={form.bodyFat} onChange={(v) => handleChange("bodyFat", Number(v))} />
+        <Input label="年齡" type="number" step="1" value={form.age} onChange={(v) => handleChange("age", Number(v))} />
+        <Input label="身高 (cm)" type="number" step="0.1" value={form.heightCm} onChange={(v) => handleChange("heightCm", Number(v))} />
+        <Input label="體重 (kg)" type="number" step="0.1" value={form.weightKg} onChange={(v) => handleChange("weightKg", Number(v))} />
+        <Input label="體脂 (%)" type="number" step="0.5" value={form.bodyFat} onChange={(v) => handleChange("bodyFat", Number(v))} />
         <Select
           label="活動量"
           value={form.activity}
@@ -338,7 +368,7 @@ export default function FitnessAIPlanner() {
           onChange={(v) => handleChange("equipmentLevel", v)}
           options={[
             { value: "bw", label: "徒手" },
-            { value: "db", label: "徒手＋啞鈴（簡易）" },
+            { value: "db", label: "徒手＋簡易器材（啞鈴）" },
             { value: "gym", label: "健身房設備" },
           ]}
         />
@@ -355,7 +385,7 @@ export default function FitnessAIPlanner() {
         </label>
       </div>
 
-      {/* 計算結果 + 產生按鈕 */}
+      {/* 計算結果與按鈕（下載鍵常駐；未產生前禁用） */}
       <div className="mt-6 bg-white shadow rounded-xl p-4 max-w-xl">
         <h2 className="font-semibold mb-2">📊 計算結果</h2>
         <p>BMI：{calc.bmi ? calc.bmi.toFixed(1) : "—"}</p>
@@ -364,50 +394,42 @@ export default function FitnessAIPlanner() {
         <p>建議每日熱量：{Math.round(calc.kcal)} kcal</p>
         <p>蛋白質：{calc.proteinG} g，脂肪：{calc.fatG} g，碳水：{calc.carbsG} g</p>
 
-        <div className="flex gap-2 mt-3">
+        <div className="flex gap-3 mt-3">
           <button
             onClick={buildPlan}
             className="px-4 py-2 rounded-xl bg-black text-white hover:opacity-90"
           >
             產生專屬方案
           </button>
-          {plan && (
-            <button
-              onClick={savePlanAsImage}
-              className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-100"
-            >
-              下載圖片（PNG）
-            </button>
-          )}
+
+          <button
+            onClick={savePlanAsImage}
+            disabled={!plan}
+            title={!plan ? "請先點『產生專屬方案』" : "下載 PNG"}
+            className={`px-4 py-2 rounded-xl border ${
+              plan ? "border-gray-300 hover:bg-gray-100" : "border-gray-200 text-gray-400 cursor-not-allowed"
+            }`}
+          >
+            下載圖片（PNG）
+          </button>
         </div>
       </div>
 
-      {/* 專屬方案輸出（這一塊會被轉成圖片） */}
+      {/* 可截圖區塊（營養＋訓練＋實用建議） */}
       {plan && (
-        <div
-          ref={planRef}
-          className="mt-6 grid md:grid-cols-2 gap-6 max-w-6xl bg-white p-4 rounded-2xl shadow"
-        >
-          <div className="text-sm text-gray-500 mb-2 md:col-span-2">
-            建議產出：{new Date(plan.generatedAt).toLocaleString()} ｜ 器材：{equipmentLabel}
-          </div>
-
-          <div className="bg-white border rounded-xl p-4">
+        <div ref={planRef} className="mt-6 grid md:grid-cols-3 gap-6 max-w-6xl">
+          <div className="bg-white shadow rounded-xl p-4 md:col-span-1">
+            <div className="mb-2 text-sm text-gray-500">
+              產出時間：{new Date(plan.generatedAt).toLocaleString()} ｜ 器材：{{ bw: "徒手", db: "徒手+啞鈴", gym: "健身房設備" }[form.equipmentLevel]}
+            </div>
             <h3 className="font-semibold mb-2">🍽️ 營養建議</h3>
             <p>每日熱量：<b>{plan.nutrition.calories}</b> kcal</p>
-            <p>
-              蛋白質：<b>{plan.nutrition.protein_g}</b> g、脂肪：<b>{plan.nutrition.fat_g}</b> g、碳水：<b>{plan.nutrition.carbs_g}</b> g
-            </p>
-            <h4 className="font-semibold mt-4 mb-1">💡 實用技巧</h4>
-            <ul className="list-disc pl-5 text-sm space-y-1">
-              {plan.tips.map((t, i) => (
-                <li key={i}>{t}</li>
-              ))}
-            </ul>
+            <p>蛋白質：<b>{plan.nutrition.protein_g}</b> g、脂肪：<b>{plan.nutrition.fat_g}</b> g、碳水：<b>{plan.nutrition.carbs_g}</b> g</p>
+            <div className="mt-4 text-[10px] text-gray-400 text-right">© 健身超猛專案 — 非醫療建議</div>
           </div>
 
-          <div className="bg-white border rounded-xl p-4">
-            <h3 className="font-semibold mb-2">🏃 每週訓練表（{form.daysPerWeek} 天｜{equipmentLabel}）</h3>
+          <div className="bg-white shadow rounded-xl p-4 md:col-span-1">
+            <h3 className="font-semibold mb-2">🏃 每週訓練表（{form.daysPerWeek} 天）</h3>
             <div className="space-y-3">
               {plan.training.map((d, i) => (
                 <div key={i} className="border rounded-xl p-3">
@@ -433,8 +455,11 @@ export default function FitnessAIPlanner() {
             </div>
           </div>
 
-          <div className="text-[10px] text-gray-400 md:col-span-2 text-right">
-            © Fitness AI — 本工具提供一般性建議，非醫療診斷
+          <div className="bg-white shadow rounded-xl p-4 md:col-span-1">
+            <h3 className="font-semibold mb-2">🧠 實用建議（依個人狀態）</h3>
+            <ul className="list-disc pl-5 text-sm space-y-1">
+              {plan.tips.map((t, i) => (<li key={i}>{t}</li>))}
+            </ul>
           </div>
         </div>
       )}
@@ -446,13 +471,14 @@ export default function FitnessAIPlanner() {
   );
 }
 
-function Input({ label, value, onChange, type = "text" }) {
+function Input({ label, value, onChange, type = "text", step }) {
   return (
     <label className="text-sm">
       <span className="text-gray-600">{label}</span>
       <input
         className="w-full px-3 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900"
         type={type}
+        step={step}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
